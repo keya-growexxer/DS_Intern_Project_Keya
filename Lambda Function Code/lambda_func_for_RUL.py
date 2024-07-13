@@ -4,6 +4,7 @@ import pandas as pd
 from sqlalchemy import create_engine
 from io import StringIO
 import logging
+import os
 
 # Set up logging
 logger = logging.getLogger()
@@ -26,23 +27,21 @@ def lambda_handler(event, context):
         dataframe = pd.read_csv(StringIO(csv_string))
         logger.info(f'First 3 rows of the DataFrame:\n{dataframe.head(3)}')
         
-        # Database connection parameters
-        db_host = 'turbofan-engine-database-instance.cru0o4s60i3o.ap-south-1.rds.amazonaws.com'
-        db_port = '5432'
-        db_name = 'turbofanenginedatabase'
-        db_user = 'postgres'
-        db_password = 'project12'
+        # Database connection parameters from environment variables
+        db_host = os.environ['DB_HOST']
+        db_port = os.environ['DB_PORT']
+        db_name = os.environ['DB_NAME']
+        db_user = os.environ['DB_USER']
+        db_password = os.environ['DB_PASSWORD']
+        db_table = os.environ['DB_TABLE']
         
         # Create the database connection string
         db_url = f'postgresql+psycopg2://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}'
         # Create a SQLAlchemy engine
         engine = create_engine(db_url)
         
-        # Define the table name
-        table_name = 'turbofan_rul_data'
-        
         # Insert data into the PostgreSQL database using pandas
-        dataframe.to_sql(table_name, engine, if_exists='replace', index=False)
+        dataframe.to_sql(db_table, engine, if_exists='replace', index=False)
         
     except Exception as err:
         logger.error(f'Error: {err}')

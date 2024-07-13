@@ -1,5 +1,6 @@
 import json
 import boto3
+import os
 import pandas as pd
 from sqlalchemy import create_engine, MetaData, Table, Column, Integer, Float, String
 from io import StringIO
@@ -10,35 +11,47 @@ s3_client = boto3.client('s3')
 # Lambda function handler
 def lambda_handler(event, context):
     try:
+        print(f"Received event: {json.dumps(event)}")  # Log the received event
+        
         # Extract S3 bucket and file details from the event
         s3_bucket_name = event["Records"][0]["s3"]["bucket"]["name"]
         s3_file_name = event["Records"][0]["s3"]["object"]["key"]
         
+        print(f"Processing file: {s3_file_name} in bucket: {s3_bucket_name}")  # Log file processing
+        
         # Retrieve the CSV file content from S3
         s3_object = s3_client.get_object(Bucket=s3_bucket_name, Key=s3_file_name)
         csv_string = s3_object['Body'].read().decode('utf-8')
-        
-        # Determine columns based on file prefix
+    
         if s3_file_name.startswith('virtual_sensors'):
-            columns = ["index", "p30", "epr", "phi", "nrf", "nrc", "bpr", "farb", "htbleed", "nf_dmd", "pcnfr_dmd", "w31", "w32"]
+            columns = ["index", "HPC_outlet_pressure (P30)", "engine_pressure_ratio (epr)", "fuel_ps30_ratio (phi)",
+               "corrected_fan_speed (NRf)", "corrected_core_speed (NRc)", "bypass_ratio (BPR)", "burner_fuel_air_ratio (farB)",
+               "bleed_enthalpy (htBleed)", "demanded_fan_speed (Nf_dmd)", "demanded_corrected_fan_speed (PCNfR_dmd)",
+               "HPT_coolant_bleed (W31)", "LPT_coolant_bleed (W32)"]
         elif s3_file_name.startswith('measurements'):
-            columns = ["index", "t24", "t30", "t50", "p2", "p15", "nf", "nc", "ps30"]
+            columns = ["index", "LPC_outlet_temperature (T24)", "HPC_outlet_temperature (T30)", "LPT_outlet_temperature (T50)",
+               "fan_inlet_pressure (P2)", "bypass_duct_pressure (P15)", "fan_speed (Nf)", "core_speed (Nc)",
+               "HPC_outlet_static_pressure (Ps30)"]
         elif s3_file_name.startswith('scenario_descriptors'):
-            columns = ["index", "alt", "mach", "tra", "t2"]
+            columns = ["index", "altitude (alt)", "mach_number (mach)", "throttle_resolver_angle (TRA)", "fan_inlet_temperature (T2)"]
         elif s3_file_name.startswith('auxiliary_data'):
             columns = ["index", "engine", "cycle", "source"]
         else:
-            raise ValueError(f"Unexpected file name: {s3_file_name}")
+            print(f"Warning: Unexpected file name: {s3_file_name}")
+            return {
+                'statusCode': 400,
+                'body': json.dumps(f'Warning: Unexpected file name: {s3_file_name}')
+            }
         
         # Read CSV data into a DataFrame without headers
         df = pd.read_csv(StringIO(csv_string), header=None, names=columns)
         
         # Database connection parameters
-        db_host = 'turbofan-engine-database-instance.cru0o4s60i3o.ap-south-1.rds.amazonaws.com'  # Change this to your RDS endpoint
-        db_name = 'turbofanenginedatabase'
-        db_user = 'postgres'
-        db_password = 'project12'
-        db_table = 'turbofan_jet_engine_dataset'
+        db_host = os.environ['DB_HOST']
+        db_name = os.environ['DB_NAME']
+        db_user = os.environ['DB_USER']
+        db_password = os.environ['DB_PASSWORD']
+        db_table = os.environ['DB_TABLE']
         
         # Create SQLAlchemy engine
         engine = create_engine(f'postgresql://{db_user}:{db_password}@{db_host}/{db_name}')
@@ -49,33 +62,32 @@ def lambda_handler(event, context):
         
         # Check if the table exists
         if db_table not in meta.tables:
-            # Define table schema
             columns = [
                 Column("index", Integer, primary_key=True),
-                Column("p30", Float),
-                Column("epr", Float),
-                Column("phi", Float),
-                Column("nrf", Float),
-                Column("nrc", Float),
-                Column("bpr", Float),
-                Column("farb", Float),
-                Column("htbleed", Float),
-                Column("nf_dmd", Float),
-                Column("pcnfr_dmd", Float),
-                Column("w31", Float),
-                Column("w32", Float),
-                Column("t24", Float),
-                Column("t30", Float),
-                Column("t50", Float),
-                Column("p2", Float),
-                Column("p15", Float),
-                Column("nf", Float),
-                Column("nc", Float),
-                Column("ps30", Float),
-                Column("alt", Float),
-                Column("mach", Float),
-                Column("tra", Float),
-                Column("t2", Float),
+                Column("HPC_outlet_pressure (P30)", Float),
+                Column("engine_pressure_ratio (epr)", Float),
+                Column("fuel_ps30_ratio (phi)", Float),
+                Column("corrected_fan_speed (NRf)", Float),
+                Column("corrected_core_speed (NRc)", Float),
+                Column("bypass_ratio (BPR)", Float),
+                Column("burner_fuel_air_ratio (farB)", Float),
+                Column("bleed_enthalpy (htBleed)", Float),
+                Column("demanded_fan_speed (Nf_dmd)", Float),
+                Column("demanded_corrected_fan_speed (PCNfR_dmd)", Float),
+                Column("HPT_coolant_bleed (W31)", Float),
+                Column("LPT_coolant_bleed (W32)", Float),
+                Column("LPC_outlet_temperature (T24)", Float),
+                Column("HPC_outlet_temperature (T30)", Float),
+                Column("LPT_outlet_temperature (T50)", Float),
+                Column("fan_inlet_pressure (P2)", Float),
+                Column("bypass_duct_pressure (P15)", Float),
+                Column("fan_speed (Nf)", Float),
+                Column("core_speed (Nc)", Float),
+                Column("HPC_outlet_static_pressure (Ps30)", Float),
+                Column("altitude (alt)", Float),
+                Column("mach_number (mach)", Float),
+                Column("throttle_resolver_angle (TRA)", Float),
+                Column("fan_inlet_temperature (T2)", Float),
                 Column("engine", Integer),
                 Column("cycle", Integer),
                 Column("source", String)
@@ -114,3 +126,4 @@ def lambda_handler(event, context):
             'statusCode': 500,
             'body': json.dumps(f'Error: {str(e)}')
         }
+
